@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* HR Management System Design System - Professional Blue-Teal Theme */
+
+@layer base {
+  :root {
+    /* Base colors */
+    --background: 240 10% 98%;
+    --foreground: 213 27% 18%;
+
+    /* Card colors */
+    --card: 0 0% 100%;
+    --card-foreground: 213 27% 18%;
+
+    /* Popover colors */
+    --popover: 0 0% 100%;
+    --popover-foreground: 213 27% 18%;
+
+    /* Primary - Deep Blue to Teal gradient */
+    --primary: 207 100% 26%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 194 100% 40%;
+
+    /* Secondary - Light professional gray */
+    --secondary: 220 14% 95%;
+    --secondary-foreground: 213 27% 18%;
+
+    /* Muted colors */
+    --muted: 220 14% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    /* Accent - Bright teal */
+    --accent: 189 100% 40%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Success */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    /* Warning */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders and inputs */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 207 100% 26%;
+
+    --radius: 0.75rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
+    --gradient-secondary: linear-gradient(135deg, hsl(var(--secondary)), hsl(var(--accent)));
+    --gradient-hero: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+    --gradient-success: linear-gradient(135deg, hsl(var(--success)), hsl(142 71% 55%));
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(var(--primary) / 0.05);
+    --shadow: 0 1px 3px 0 hsl(var(--primary) / 0.1), 0 1px 2px 0 hsl(var(--primary) / 0.06);
+    --shadow-md: 0 4px 6px -1px hsl(var(--primary) / 0.1), 0 2px 4px -1px hsl(var(--primary) / 0.06);
+    --shadow-lg: 0 10px 15px -3px hsl(var(--primary) / 0.1), 0 4px 6px -2px hsl(var(--primary) / 0.05);
+    --shadow-xl: 0 20px 25px -5px hsl(var(--primary) / 0.1), 0 10px 10px -5px hsl(var(--primary) / 0.04);
+    --shadow-glow: 0 0 30px hsl(var(--primary-glow) / 0.3);
+
+    /* Animations */
+    --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Sidebar - Professional styling */
+    --sidebar-background: 213 27% 18%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 194 100% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 213 27% 25%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 213 27% 25%;
+    --sidebar-ring: 194 100% 40%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* HR System specific styles */
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
+
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* QR Scanner styles */
+  .qr-scanner {
+    @apply rounded-xl overflow-hidden shadow-lg;
+  }
+
+  /* Calendar styles */
+  .react-calendar {
+    @apply w-full bg-card border border-border rounded-xl shadow-sm;
+  }
+
+  .react-calendar__tile {
+    @apply p-3 text-sm transition-colors;
+  }
+
+  .react-calendar__tile--active {
+    @apply bg-primary text-primary-foreground;
+  }
+
+  .react-calendar__tile--now {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .holiday {
+    @apply bg-destructive text-destructive-foreground;
+  }
+
+  .leave-day {
+    @apply bg-warning text-warning-foreground;
+  }
+}
