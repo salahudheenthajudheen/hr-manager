@@ -59,10 +59,11 @@ interface Task {
   created_by: string;
   creator_name?: string;
   priority: "low" | "medium" | "high" | "urgent";
-  status: "pending" | "in_progress" | "completed" | "overdue";
+  status: "not_started" | "in_progress" | "completed" | "shelved" | "accepted" | "rejected";
   due_date: string;
   completed_at?: string;
   created_at: string;
+  rejection_note?: string;
 }
 
 interface NewTask {
@@ -139,7 +140,7 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
     mutationFn: async (task: NewTask) => {
       if (!employee?.employee_id) throw new Error("User not authenticated");
       
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tasks')
         .insert({
           title: task.title,
@@ -148,10 +149,16 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
           created_by: employee.employee_id,
           due_date: task.due_date ? format(task.due_date, 'yyyy-MM-dd') : null,
           priority: task.priority,
-          status: 'pending'
-        });
+          status: 'not_started'
+        })
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error:", error);
+        throw new Error(error.message || "Failed to create task");
+      }
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-tasks'] });
@@ -168,11 +175,11 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
         description: "Task has been assigned successfully",
       });
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       console.error("Error creating task:", error);
       toast({
-        title: "Error",
-        description: "Failed to create task",
+        title: "Error Creating Task",
+        description: error.message || "Failed to create task. Please try again.",
         variant: "destructive"
       });
     }
@@ -215,10 +222,12 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "pending": return "bg-warning/10 text-warning border-warning/20";
+      case "not_started": return "bg-gray-100 text-gray-800 border-gray-200";
       case "in_progress": return "bg-blue-100 text-blue-800 border-blue-200";
-      case "completed": return "bg-success/10 text-success border-success/20";
-      case "overdue": return "bg-destructive/10 text-destructive border-destructive/20";
+      case "completed": return "bg-green-100 text-green-800 border-green-200";
+      case "accepted": return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      case "rejected": return "bg-red-100 text-red-800 border-red-200";
+      case "shelved": return "bg-orange-100 text-orange-800 border-orange-200";
       default: return "bg-muted text-muted-foreground";
     }
   };
@@ -235,23 +244,55 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "pending": return <Clock className="h-4 w-4" />;
+      case "not_started": return <Clock className="h-4 w-4" />;
       case "in_progress": return <Clock className="h-4 w-4" />;
       case "completed": return <CheckCircle className="h-4 w-4" />;
-      case "overdue": return <XCircle className="h-4 w-4" />;
+      case "accepted": return <CheckCircle className="h-4 w-4" />;
+      case "rejected": return <XCircle className="h-4 w-4" />;
+      case "shelved": return <Clock className="h-4 w-4" />;
       default: return <Clock className="h-4 w-4" />;
     }
   };
 
   const handleCreateTask = () => {
+    // Validate required fields
+    if (!newTask.title.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a task title",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!newTask.assigned_to) {
+      toast({
+        title: "Validation Error",
+        description: "Please select an employee to assign the task to",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!newTask.due_date) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a due date",
+        variant: "destructive"
+      });
+      return;
+    }
+
     createTaskMutation.mutate(newTask);
   };
 
   const taskStats = {
-    pending: tasks.filter(t => t.status === "pending").length,
+    not_started: tasks.filter(t => t.status === "not_started").length,
     in_progress: tasks.filter(t => t.status === "in_progress").length,
     completed: tasks.filter(t => t.status === "completed").length,
-    overdue: tasks.filter(t => t.status === "overdue").length,
+    shelved: tasks.filter(t => t.status === "shelved").length,
+    accepted: tasks.filter(t => t.status === "accepted").length,
+    rejected: tasks.filter(t => t.status === "rejected").length,
   };
 
   return (
@@ -375,8 +416,12 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
                 <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleCreateTask} className="gradient-primary text-white">
-                  Create Task
+                <Button 
+                  onClick={handleCreateTask} 
+                  className="gradient-primary text-white"
+                  disabled={!newTask.title || !newTask.assigned_to || !newTask.due_date || createTaskMutation.isPending}
+                >
+                  {createTaskMutation.isPending ? "Creating..." : "Create Task"}
                 </Button>
               </div>
             </div>
@@ -385,33 +430,47 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
-            <Clock className="h-8 w-8 mx-auto text-warning mb-2" />
-            <div className="text-2xl font-bold text-warning">{taskStats.pending}</div>
-            <div className="text-sm text-muted-foreground">Pending</div>
+            <Clock className="h-6 w-6 mx-auto text-gray-600 mb-2" />
+            <div className="text-xl font-bold text-gray-600">{taskStats.not_started}</div>
+            <div className="text-xs text-muted-foreground">Not Started</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
-            <Clock className="h-8 w-8 mx-auto text-blue-600 mb-2" />
-            <div className="text-2xl font-bold text-blue-600">{taskStats.in_progress}</div>
-            <div className="text-sm text-muted-foreground">In Progress</div>
+            <Clock className="h-6 w-6 mx-auto text-blue-600 mb-2" />
+            <div className="text-xl font-bold text-blue-600">{taskStats.in_progress}</div>
+            <div className="text-xs text-muted-foreground">In Progress</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
-            <CheckCircle className="h-8 w-8 mx-auto text-success mb-2" />
-            <div className="text-2xl font-bold text-success">{taskStats.completed}</div>
-            <div className="text-sm text-muted-foreground">Completed</div>
+            <CheckCircle className="h-6 w-6 mx-auto text-green-600 mb-2" />
+            <div className="text-xl font-bold text-green-600">{taskStats.completed}</div>
+            <div className="text-xs text-muted-foreground">Awaiting Review</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
-            <XCircle className="h-8 w-8 mx-auto text-destructive mb-2" />
-            <div className="text-2xl font-bold text-destructive">{taskStats.overdue}</div>
-            <div className="text-sm text-muted-foreground">Overdue</div>
+            <CheckCircle className="h-6 w-6 mx-auto text-emerald-600 mb-2" />
+            <div className="text-xl font-bold text-emerald-600">{taskStats.accepted}</div>
+            <div className="text-xs text-muted-foreground">Accepted</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <XCircle className="h-6 w-6 mx-auto text-red-600 mb-2" />
+            <div className="text-xl font-bold text-red-600">{taskStats.rejected}</div>
+            <div className="text-xs text-muted-foreground">Rejected</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <XCircle className="h-6 w-6 mx-auto text-orange-600 mb-2" />
+            <div className="text-xl font-bold text-orange-600">{taskStats.shelved}</div>
+            <div className="text-xs text-muted-foreground">Shelved</div>
           </CardContent>
         </Card>
       </div>
@@ -439,10 +498,12 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="not_started">Not Started</SelectItem>
                 <SelectItem value="in_progress">In Progress</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="overdue">Overdue</SelectItem>
+                <SelectItem value="accepted">Accepted</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="shelved">Shelved</SelectItem>
               </SelectContent>
             </Select>
           </div>

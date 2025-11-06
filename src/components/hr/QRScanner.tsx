@@ -2,51 +2,72 @@ import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Camera, AlertCircle } from "lucide-react";
+import { Html5Qrcode } from "html5-qrcode";
 
 interface QRScannerProps {
   onScan: (data: string) => void;
 }
 
 const QRScanner = ({ onScan }: QRScannerProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isActive, setIsActive] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
-    const startCamera = async () => {
+    const qrCodeRegionId = "qr-reader";
+
+    const startScanner = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }
-        });
-        
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          setIsActive(true);
-          setError(null);
-        }
-      } catch (err) {
-        console.error("Error accessing camera:", err);
-        setError("Could not access camera. Please ensure camera permissions are granted.");
+        // Create scanner instance
+        scannerRef.current = new Html5Qrcode(qrCodeRegionId);
+
+        // Start scanning
+        await scannerRef.current.start(
+          { facingMode: "environment" }, // Use back camera
+          {
+            fps: 10, // Frames per second
+            qrbox: { width: 250, height: 250 }, // Scanning box size
+          },
+          (decodedText) => {
+            // Success callback - QR code scanned
+            console.log("QR Code scanned:", decodedText);
+            onScan(decodedText);
+            // Stop scanning after successful scan
+            stopScanner();
+          },
+          (errorMessage) => {
+            // Error callback - ignore continuous scanning errors
+            // console.log("Scanning...", errorMessage);
+          }
+        );
+
+        setIsScanning(true);
+        setError(null);
+      } catch (err: any) {
+        console.error("Error starting scanner:", err);
+        setError(err?.message || "Could not access camera. Please ensure camera permissions are granted.");
+        setIsScanning(false);
       }
     };
 
-    startCamera();
+    const stopScanner = async () => {
+      if (scannerRef.current && scannerRef.current.isScanning) {
+        try {
+          await scannerRef.current.stop();
+          setIsScanning(false);
+        } catch (err) {
+          console.error("Error stopping scanner:", err);
+        }
+      }
+    };
+
+    startScanner();
 
     // Cleanup function
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-      }
+      stopScanner();
     };
-  }, []);
-
-  // Simulate QR scanning - in a real app you'd use a QR scanning library
-  const handleVideoClick = () => {
-    // For demo purposes, we'll simulate a successful scan
-    const demoEmployeeId = `EMP${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
-    onScan(demoEmployeeId);
-  };
+  }, [onScan]);
 
   if (error) {
     return (
@@ -61,37 +82,15 @@ const QRScanner = ({ onScan }: QRScannerProps) => {
 
   return (
     <Card className="qr-scanner">
-      <CardContent className="p-0">
-        <div className="relative aspect-square bg-muted rounded-xl overflow-hidden">
-          {isActive ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-cover cursor-pointer"
-              onClick={handleVideoClick}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <Camera className="h-12 w-12 text-muted-foreground" />
-            </div>
-          )}
-          
-          {/* Scanning overlay */}
-          <div className="absolute inset-0 border-2 border-primary/30 rounded-xl">
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-48 h-48 border-2 border-primary rounded-lg">
-              <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-primary rounded-tl-lg"></div>
-              <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-primary rounded-tr-lg"></div>
-              <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-primary rounded-bl-lg"></div>
-              <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-primary rounded-br-lg"></div>
-            </div>
-          </div>
+      <CardContent className="p-4">
+        <div className="relative">
+          {/* QR Scanner Container */}
+          <div id="qr-reader" className="w-full rounded-lg overflow-hidden"></div>
           
           {/* Instructions */}
-          <div className="absolute bottom-4 left-4 right-4 text-center">
-            <p className="text-white bg-black/50 px-3 py-1 rounded-full text-sm">
-              {isActive ? "Click to simulate QR scan" : "Starting camera..."}
+          <div className="mt-3 text-center">
+            <p className="text-sm text-muted-foreground">
+              {isScanning ? "📷 Position QR code within the frame" : "Starting camera..."}
             </p>
           </div>
         </div>

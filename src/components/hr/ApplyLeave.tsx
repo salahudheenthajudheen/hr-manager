@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, Calendar as CalendarIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, Calendar as CalendarIcon, CheckCircle, XCircle, Clock, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -14,6 +15,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface ApplyLeaveProps {
   onNavigate: (page: "home" | "attendance" | "report" | "leave" | "tasks") => void;
@@ -26,6 +28,22 @@ interface LeaveFormData {
   fromDate: Date | undefined;
   toDate: Date | undefined;
   document: File | null;
+}
+
+interface LeaveRequest {
+  id: string;
+  employee_id: string;
+  leave_type: string;
+  subject: string;
+  description: string;
+  from_date: string;
+  to_date: string;
+  status: "pending" | "approved" | "rejected";
+  has_document: boolean;
+  approved_by?: string;
+  approved_at?: string;
+  rejection_reason?: string;
+  created_at: string;
 }
 
 const ApplyLeave = ({ onNavigate }: ApplyLeaveProps) => {
@@ -41,6 +59,26 @@ const ApplyLeave = ({ onNavigate }: ApplyLeaveProps) => {
     document: null
   });
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // Fetch employee's leave requests
+  const { data: leaveRequests = [], isLoading: isLoadingRequests } = useQuery({
+    queryKey: ['my-leave-requests', employee?.employee_id],
+    queryFn: async () => {
+      if (!employee?.employee_id) return [];
+      
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .select('*')
+        .eq('employee_id', employee.employee_id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return data as LeaveRequest[];
+    },
+    enabled: !!employee?.employee_id,
+    refetchInterval: 10000, // Refresh every 10 seconds to see updates
+  });
 
   const leaveTypes = [
     { value: "annual", label: "Annual Leave" },
@@ -92,6 +130,9 @@ const ApplyLeave = ({ onNavigate }: ApplyLeaveProps) => {
         description: "Your leave application has been submitted for approval",
       });
       
+      // Invalidate and refetch leave requests
+      queryClient.invalidateQueries({ queryKey: ['my-leave-requests'] });
+      
       // Reset form
       setFormData({
         leaveType: "",
@@ -125,6 +166,32 @@ const ApplyLeave = ({ onNavigate }: ApplyLeaveProps) => {
     }
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "approved": return "bg-success/10 text-success border-success/20";
+      case "rejected": return "bg-destructive/10 text-destructive border-destructive/20";
+      case "pending": return "bg-warning/10 text-warning border-warning/20";
+      default: return "bg-muted text-muted-foreground";
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "approved": return <CheckCircle className="h-4 w-4" />;
+      case "rejected": return <XCircle className="h-4 w-4" />;
+      case "pending": return <Clock className="h-4 w-4" />;
+      default: return <Clock className="h-4 w-4" />;
+    }
+  };
+
+  const calculateDays = (fromDate: string, toDate: string) => {
+    const from = new Date(fromDate);
+    const to = new Date(toDate);
+    const diffTime = Math.abs(to.getTime() - from.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return diffDays;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/50">
       <div className="container mx-auto px-4 py-8">
@@ -138,15 +205,16 @@ const ApplyLeave = ({ onNavigate }: ApplyLeaveProps) => {
             Back to Home
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">Apply for Leave</h1>
+            <h1 className="text-3xl font-bold">Leave Management</h1>
             <p className="text-muted-foreground">{employee?.name} ({employee?.employee_id})</p>
           </div>
         </div>
 
-        <div className="max-w-2xl mx-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto">
+          {/* Apply Leave Form */}
           <Card>
             <CardHeader>
-              <CardTitle>Leave Application Form</CardTitle>
+              <CardTitle>Apply for Leave</CardTitle>
               <CardDescription>
                 Fill in the details for your leave request
               </CardDescription>
@@ -280,6 +348,90 @@ const ApplyLeave = ({ onNavigate }: ApplyLeaveProps) => {
                     {message.text}
                   </AlertDescription>
                 </Alert>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Leave Request History */}
+          <Card>
+            <CardHeader>
+              <CardTitle>My Leave Requests</CardTitle>
+              <CardDescription>
+                View your submitted leave requests and their status
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoadingRequests ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  Loading your leave requests...
+                </div>
+              ) : leaveRequests.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <CalendarIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No leave requests submitted yet</p>
+                </div>
+              ) : (
+                <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                  {leaveRequests.map((request) => {
+                    const days = calculateDays(request.from_date, request.to_date);
+                    
+                    return (
+                      <div 
+                        key={request.id} 
+                        className="border rounded-lg p-4 space-y-3 hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge className="capitalize">{request.leave_type.replace('_', ' ')}</Badge>
+                              <Badge className={getStatusColor(request.status)}>
+                                {getStatusIcon(request.status)}
+                                <span className="ml-1 capitalize">{request.status}</span>
+                              </Badge>
+                            </div>
+                            <h4 className="font-semibold">{request.subject}</h4>
+                          </div>
+                        </div>
+
+                        <div className="text-sm space-y-1">
+                          <div className="flex items-center text-muted-foreground">
+                            <CalendarIcon className="h-3 w-3 mr-1" />
+                            {format(new Date(request.from_date), "MMM dd")} - {format(new Date(request.to_date), "MMM dd, yyyy")}
+                            <span className="ml-2">({days} days)</span>
+                          </div>
+                          
+                          {request.description && (
+                            <p className="text-muted-foreground">
+                              <strong>Description:</strong> {request.description}
+                            </p>
+                          )}
+                          
+                          <p className="text-muted-foreground text-xs">
+                            Applied on {format(new Date(request.created_at), "MMM dd, yyyy 'at' HH:mm")}
+                          </p>
+
+                          {request.approved_at && (
+                            <p className="text-muted-foreground text-xs">
+                              {request.status === 'approved' ? 'Approved' : 'Reviewed'} by {request.approved_by} on {format(new Date(request.approved_at), "MMM dd, yyyy")}
+                            </p>
+                          )}
+
+                          {request.rejection_reason && (
+                            <div className="bg-muted/50 p-2 rounded mt-2">
+                              <div className="flex items-start gap-2">
+                                <MessageSquare className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                                <div className="flex-1">
+                                  <p className="text-xs font-medium">Admin Comments:</p>
+                                  <p className="text-xs text-muted-foreground">{request.rejection_reason}</p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </CardContent>
           </Card>

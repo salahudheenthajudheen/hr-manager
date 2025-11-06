@@ -51,16 +51,22 @@ interface AttendanceRecord {
 }
 
 const AdminAttendance = ({ onBack }: AdminAttendanceProps) => {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  // Get local date in YYYY-MM-DD format using device timezone
+  const getLocalDate = (date: Date = new Date()) => {
+    return new Date(date.getTime() - (date.getTimezoneOffset() * 60000))
+      .toISOString()
+      .split('T')[0];
+  };
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
 
   // Fetch attendance records for selected date
   const { data: attendanceRecords = [], isLoading } = useQuery<AttendanceRecord[]>({
-    queryKey: ['admin-attendance', format(selectedDate, 'yyyy-MM-dd')],
+    queryKey: ['admin-attendance', getLocalDate(selectedDate)],
     queryFn: async () => {
-      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const dateStr = getLocalDate(selectedDate);
       const { data, error } = await supabase
         .from('attendance')
         .select(`
@@ -81,8 +87,8 @@ const AdminAttendance = ({ onBack }: AdminAttendanceProps) => {
   });
 
   const filteredRecords = attendanceRecords.filter(record => {
-    const matchesSearch = (record.employee_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         record.employee_id.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (record.employee_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         record.employee_id.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || record.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -194,8 +200,8 @@ const AdminAttendance = ({ onBack }: AdminAttendanceProps) => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search employees..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
               />
             </div>

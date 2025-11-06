@@ -58,6 +58,7 @@ interface Employee {
   phone: string;
   department: string;
   role: string;
+  location: string;
   created_at: string;
 }
 
@@ -75,7 +76,10 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
     phone: "",
     department: "",
     role: "employee",
+    location: "in-office",
     password: "",
+    employeeIdTag: "EMP",
+    employeeIdCode: "",
   });
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -140,7 +144,21 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
   // Add employee mutation
   const addEmployeeMutation = useMutation({
     mutationFn: async (data: typeof newEmployeeData) => {
-      // Step 1: Create auth user with email confirmation disabled
+      // Step 1: Create the custom employee ID from tag and code
+      const employeeId = `${data.employeeIdTag}${data.employeeIdCode}`;
+
+      // Step 2: Check if employee ID already exists
+      const { data: existingEmployee } = await supabase
+        .from('employees')
+        .select('employee_id')
+        .eq('employee_id', employeeId)
+        .single();
+
+      if (existingEmployee) {
+        throw new Error(`Employee ID "${employeeId}" already exists. Please choose a different code.`);
+      }
+
+      // Step 3: Create auth user with email confirmation disabled
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -155,11 +173,7 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
       if (authError) throw authError;
       if (!authData.user) throw new Error("Failed to create user");
 
-      // Step 2: Generate employee_id
-      const count = employees.length + 1;
-      const employeeId = `EMP${String(count).padStart(3, '0')}`;
-
-      // Step 3: Insert into employees table
+      // Step 4: Insert into employees table
       const { error: insertError } = await supabase
         .from('employees')
         .insert({
@@ -170,6 +184,7 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
           phone: data.phone,
           department: data.department,
           role: data.role,
+          location: data.location,
         });
 
       if (insertError) {
@@ -193,7 +208,10 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
         phone: "",
         department: "",
         role: "employee",
+        location: "in-office",
         password: "",
+        employeeIdTag: "EMP",
+        employeeIdCode: "",
       });
     },
     onError: (error: any) => {
@@ -217,6 +235,7 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
           phone: data.phone,
           department: data.department,
           role: data.role,
+          location: data.location,
         })
         .eq('employee_id', data.employee_id);
 
@@ -276,6 +295,27 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate employee ID tag and code
+    if (!newEmployeeData.employeeIdTag.trim() || !newEmployeeData.employeeIdCode.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter both employee ID tag and code",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate employee ID code format (alphanumeric only)
+    const idCodeRegex = /^[A-Za-z0-9]+$/;
+    if (!idCodeRegex.test(newEmployeeData.employeeIdCode)) {
+      toast({
+        title: "Validation Error",
+        description: "Employee ID code must contain only letters and numbers",
         variant: "destructive"
       });
       return;
@@ -428,6 +468,8 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
                     <div className="flex items-center space-x-4 text-sm">
                       <span className="text-muted-foreground">{employee.department}</span>
                       <span className="text-muted-foreground">•</span>
+                      <span className="text-muted-foreground capitalize">{employee.location?.replace('-', ' ') || 'N/A'}</span>
+                      <span className="text-muted-foreground">•</span>
                       <div className="flex items-center text-muted-foreground">
                         <Calendar className="h-3 w-3 mr-1" />
                         Joined {new Date(employee.created_at).toLocaleDateString()}
@@ -477,6 +519,36 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <Label>Employee ID *</Label>
+                <div className="flex gap-2 mt-1">
+                  <div className="w-1/3">
+                    <Input
+                      value={newEmployeeData.employeeIdTag}
+                      onChange={(e) => setNewEmployeeData({ ...newEmployeeData, employeeIdTag: e.target.value.toUpperCase() })}
+                      placeholder="EMP"
+                      maxLength={10}
+                      className="uppercase"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Tag/Prefix</p>
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      value={newEmployeeData.employeeIdCode}
+                      onChange={(e) => setNewEmployeeData({ ...newEmployeeData, employeeIdCode: e.target.value.toUpperCase() })}
+                      placeholder="001 or ABC123"
+                      className="uppercase"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Code (letters/numbers)</p>
+                  </div>
+                  <div className="w-1/3 flex items-center justify-center border rounded-md bg-muted px-3">
+                    <span className="font-mono font-semibold">
+                      {newEmployeeData.employeeIdTag}{newEmployeeData.employeeIdCode || "___"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <Label htmlFor="add-name">Full Name *</Label>
                 <Input
@@ -530,7 +602,7 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
               </div>
 
               <div>
-                <Label htmlFor="add-role">Role *</Label>
+                <Label>Role *</Label>
                 <select
                   id="add-role"
                   value={newEmployeeData.role}
@@ -541,11 +613,25 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
                   <option value="admin">Admin</option>
                 </select>
               </div>
+
+              <div>
+                <Label>Location *</Label>
+                <select
+                  id="add-location"
+                  value={newEmployeeData.location}
+                  onChange={(e) => setNewEmployeeData({ ...newEmployeeData, location: e.target.value })}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="in-office">In-Office</option>
+                  <option value="work-from-home">Work From Home</option>
+                  <option value="field-work">Field Work</option>
+                </select>
+              </div>
             </div>
 
             <div className="bg-muted p-3 rounded-md text-sm">
               <p className="text-muted-foreground">
-                <strong>Note:</strong> Employee ID will be auto-generated. The employee can log in immediately using their email and password.
+                <strong>Note:</strong> Create a custom Employee ID using a tag (e.g., EMP, DEV, HR) and a unique code. The employee can log in immediately using their email and password.
               </p>
             </div>
           </div>
@@ -612,6 +698,11 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
                 <div>
                   <Label className="text-muted-foreground">Department</Label>
                   <p className="font-medium mt-1">{selectedEmployee.department}</p>
+                </div>
+
+                <div>
+                  <Label className="text-muted-foreground">Location</Label>
+                  <p className="font-medium mt-1 capitalize">{selectedEmployee.location?.replace('-', ' ') || 'N/A'}</p>
                 </div>
 
                 <div>
@@ -711,6 +802,20 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
                   >
                     <option value="employee">Employee</option>
                     <option value="admin">Admin</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-location">Location *</Label>
+                  <select
+                    id="edit-location"
+                    value={editFormData.location}
+                    onChange={(e) => setEditFormData({ ...editFormData, location: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="in-office">In-Office</option>
+                    <option value="work-from-home">Work From Home</option>
+                    <option value="field-work">Field Work</option>
                   </select>
                 </div>
               </div>

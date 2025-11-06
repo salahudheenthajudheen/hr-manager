@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import SignIn from "./pages/SignIn";
+import EmployeeSignIn from "./pages/EmployeeSignIn";
+import AdminSignIn from "./pages/AdminSignIn";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
 
@@ -30,9 +32,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Public Route Component (redirects to dashboard if already logged in)
+// Public Route Component (no auto-redirect, login pages handle navigation)
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
 
   if (loading) {
     return (
@@ -40,10 +42,6 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
-  }
-
-  if (user) {
-    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
@@ -57,6 +55,23 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
+            {/* More specific routes first */}
+            <Route
+              path="/signin/employee"
+              element={
+                <PublicRoute>
+                  <EmployeeSignIn />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/signin/admin"
+              element={
+                <PublicRoute>
+                  <AdminSignIn />
+                </PublicRoute>
+              }
+            />
             <Route
               path="/signin"
               element={

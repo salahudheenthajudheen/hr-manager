@@ -24,6 +24,7 @@ import AdminEmployees from "./AdminEmployees";
 import AdminAttendance from "./AdminAttendance";
 import AdminLeaveRequests from "./AdminLeaveRequests";
 import AdminTasks from "./AdminTasks";
+import AdminSettings from "./AdminSettings";
 
 interface AdminDashboardProps {
   adminData: { email: string; name: string; role: string };
@@ -167,16 +168,7 @@ const AdminDashboard = ({ adminData, onLogout }: AdminDashboardProps) => {
       case "tasks":
         return <AdminTasks onBack={() => setCurrentPage("dashboard")} />;
       case "settings":
-        return (
-          <div className="p-6">
-            <h2 className="text-2xl font-bold mb-4">Settings</h2>
-            <Card>
-              <CardContent className="p-6">
-                <p className="text-muted-foreground">Settings panel coming soon...</p>
-              </CardContent>
-            </Card>
-          </div>
-        );
+        return <AdminSettings onBack={() => setCurrentPage("dashboard")} />;
       default:
         return (
           <div className="p-6 space-y-6">
@@ -376,7 +368,7 @@ const AdminDashboard = ({ adminData, onLogout }: AdminDashboardProps) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/50 flex">
       {/* Sidebar */}
-      <div className="w-64 bg-card border-r shadow-lg">
+      <div className="w-64 bg-card border-r shadow-lg flex flex-col">
         <div className="p-6 border-b">
           <div className="flex items-center space-x-3">
             <div className="p-2 rounded-lg gradient-primary">
@@ -389,7 +381,7 @@ const AdminDashboard = ({ adminData, onLogout }: AdminDashboardProps) => {
           </div>
         </div>
 
-        <nav className="p-4 space-y-2">
+        <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
           {navigationItems.map((item) => (
             <Button
               key={item.id}
@@ -403,10 +395,10 @@ const AdminDashboard = ({ adminData, onLogout }: AdminDashboardProps) => {
           ))}
         </nav>
 
-        <div className="absolute bottom-4 left-4 right-4">
+        <div className="p-4 border-t mt-auto">
           <Button 
             variant="outline" 
-            className="w-full"
+            className="w-full hover:bg-destructive hover:text-destructive-foreground"
             onClick={onLogout}
           >
             <LogOut className="h-4 w-4 mr-2" />

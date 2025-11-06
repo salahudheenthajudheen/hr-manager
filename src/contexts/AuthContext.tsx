@@ -11,6 +11,7 @@ interface Employee {
   role: 'admin' | 'employee';
   department: string;
   phone: string | null;
+  location: string;
 }
 
 interface AuthContextType {

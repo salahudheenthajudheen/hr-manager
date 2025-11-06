@@ -3,12 +3,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, CheckCircle, Clock, AlertCircle, User } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, AlertCircle, User, Play, Pause, Archive } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface EmployeeTasksProps {
   onNavigate: (page: "home" | "attendance" | "report" | "leave" | "tasks") => void;
@@ -18,7 +25,7 @@ interface Task {
   id: string;  // UUID stored as string
   title: string;
   description: string;
-  status: "pending" | "completed" | "accepted" | "rejected";
+  status: "not_started" | "in_progress" | "completed" | "shelved" | "accepted" | "rejected";
   due_date: string;
   priority: "low" | "medium" | "high";
   rejection_note?: string;
@@ -49,25 +56,26 @@ const EmployeeTasks = ({ onNavigate }: EmployeeTasksProps) => {
     refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
 
-  // Mutation to mark task as completed
-  const completeTaskMutation = useMutation({
-    mutationFn: async (taskId: string) => {
+  // Mutation to update task status
+  const updateTaskStatusMutation = useMutation({
+    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
       const { error } = await supabase
         .from('tasks')
-        .update({ status: 'completed' })
+        .update({ status })
         .eq('id', taskId);
 
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employee-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-tasks'] }); // Also refresh admin view
       toast({
-        title: "Task Completed",
-        description: "Task has been marked as completed and sent for review",
+        title: "Status Updated",
+        description: "Task status has been updated successfully",
       });
     },
     onError: (error) => {
-      console.error("Error completing task:", error);
+      console.error("Error updating task:", error);
       toast({
         title: "Error",
         description: "Failed to update task status",
@@ -76,15 +84,17 @@ const EmployeeTasks = ({ onNavigate }: EmployeeTasksProps) => {
     }
   });
 
-  const handleTaskComplete = (taskId: string) => {
-    completeTaskMutation.mutate(taskId);
+  const handleStatusChange = (taskId: string, newStatus: string) => {
+    updateTaskStatusMutation.mutate({ taskId, status: newStatus });
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "pending": return "bg-yellow-100 text-yellow-800";
-      case "completed": return "bg-blue-100 text-blue-800";
-      case "accepted": return "bg-green-100 text-green-800";
+      case "not_started": return "bg-gray-100 text-gray-800";
+      case "in_progress": return "bg-blue-100 text-blue-800";
+      case "completed": return "bg-green-100 text-green-800";
+      case "shelved": return "bg-orange-100 text-orange-800";
+      case "accepted": return "bg-emerald-100 text-emerald-800";
       case "rejected": return "bg-red-100 text-red-800";
       default: return "bg-gray-100 text-gray-800";
     }
@@ -101,11 +111,25 @@ const EmployeeTasks = ({ onNavigate }: EmployeeTasksProps) => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "pending": return <Clock className="h-4 w-4" />;
+      case "not_started": return <Clock className="h-4 w-4" />;
+      case "in_progress": return <Play className="h-4 w-4" />;
       case "completed": return <CheckCircle className="h-4 w-4" />;
+      case "shelved": return <Archive className="h-4 w-4" />;
       case "accepted": return <CheckCircle className="h-4 w-4" />;
       case "rejected": return <AlertCircle className="h-4 w-4" />;
       default: return <Clock className="h-4 w-4" />;
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "not_started": return "Not Started";
+      case "in_progress": return "In Progress";
+      case "completed": return "Completed";
+      case "shelved": return "Shelved";
+      case "accepted": return "Accepted";
+      case "rejected": return "Rejected";
+      default: return status;
     }
   };
 
@@ -124,7 +148,11 @@ const EmployeeTasks = ({ onNavigate }: EmployeeTasksProps) => {
     );
   }
 
-  const pendingTasks = tasks.filter(task => task.status === "pending");
+  const activeTasks = tasks.filter(task => 
+    task.status === "not_started" || 
+    task.status === "in_progress" ||
+    task.status === "shelved"
+  );
   const completedTasks = tasks.filter(task => task.status === "completed");
   const acceptedTasks = tasks.filter(task => task.status === "accepted");
   const rejectedTasks = tasks.filter(task => task.status === "rejected");
@@ -161,14 +189,14 @@ const EmployeeTasks = ({ onNavigate }: EmployeeTasksProps) => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-warning">{pendingTasks.length}</div>
-              <div className="text-sm text-muted-foreground">Pending</div>
+              <div className="text-2xl font-bold text-primary">{activeTasks.length}</div>
+              <div className="text-sm text-muted-foreground">Active Tasks</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-primary">{completedTasks.length}</div>
-              <div className="text-sm text-muted-foreground">Completed</div>
+              <div className="text-2xl font-bold text-blue-600">{completedTasks.length}</div>
+              <div className="text-sm text-muted-foreground">Awaiting Review</div>
             </CardContent>
           </Card>
           <Card>
@@ -187,39 +215,69 @@ const EmployeeTasks = ({ onNavigate }: EmployeeTasksProps) => {
 
         {/* Tasks List */}
         <div className="space-y-6">
-          {/* Pending Tasks */}
-          {pendingTasks.length > 0 && (
+          {/* Active Tasks */}
+          {activeTasks.length > 0 && (
             <div>
-              <h2 className="text-xl font-semibold mb-4">Pending Tasks</h2>
+              <h2 className="text-xl font-semibold mb-4">Active Tasks</h2>
               <div className="space-y-4">
-                {pendingTasks.map((task) => (
+                {activeTasks.map((task) => (
                   <Card key={task.id} className="card-hover">
                     <CardContent className="p-6">
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            <Checkbox
-                              checked={false}
-                              onCheckedChange={() => handleTaskComplete(task.id)}
-                              disabled={completeTaskMutation.isPending}
-                            />
-                            <h3 className="font-semibold">{task.title}</h3>
-                          </div>
-                          <p className="text-muted-foreground mb-3">{task.description}</p>
-                          <div className="flex items-center space-x-2">
-                            <Badge className={getStatusColor(task.status)}>
-                              {getStatusIcon(task.status)}
-                              <span className="ml-1 capitalize">{task.status}</span>
-                            </Badge>
+                          <h3 className="font-semibold text-lg mb-2">{task.title}</h3>
+                          <p className="text-muted-foreground mb-4">{task.description}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Badge className={getPriorityColor(task.priority)}>
                               {task.priority.toUpperCase()}
                             </Badge>
                             {task.due_date && (
-                              <span className="text-sm text-muted-foreground">
+                              <span className="text-sm text-muted-foreground flex items-center">
+                                <Clock className="h-3 w-3 mr-1" />
                                 Due: {new Date(task.due_date).toLocaleDateString()}
                               </span>
                             )}
                           </div>
+                        </div>
+                        <div className="min-w-[180px]">
+                          <label className="text-sm text-muted-foreground mb-2 block">
+                            Task Status
+                          </label>
+                          <Select
+                            value={task.status}
+                            onValueChange={(value) => handleStatusChange(task.id, value)}
+                            disabled={updateTaskStatusMutation.isPending}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="not_started">
+                                <div className="flex items-center">
+                                  <Clock className="h-4 w-4 mr-2" />
+                                  Not Started
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="in_progress">
+                                <div className="flex items-center">
+                                  <Play className="h-4 w-4 mr-2" />
+                                  In Progress
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="completed">
+                                <div className="flex items-center">
+                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                  Completed
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="shelved">
+                                <div className="flex items-center">
+                                  <Archive className="h-4 w-4 mr-2" />
+                                  Shelved
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
                     </CardContent>
@@ -237,39 +295,69 @@ const EmployeeTasks = ({ onNavigate }: EmployeeTasksProps) => {
                 {rejectedTasks.map((task) => (
                   <Card key={task.id} className="card-hover border-destructive/20">
                     <CardContent className="p-6">
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            <Checkbox
-                              checked={false}
-                              onCheckedChange={() => handleTaskComplete(task.id)}
-                              disabled={completeTaskMutation.isPending}
-                            />
-                            <h3 className="font-semibold">{task.title}</h3>
-                          </div>
+                          <h3 className="font-semibold text-lg mb-2">{task.title}</h3>
                           <p className="text-muted-foreground mb-3">{task.description}</p>
                           {task.rejection_note && (
-                            <Alert className="mb-3 border-destructive/30">
+                            <Alert className="mb-4 border-destructive/30">
                               <AlertCircle className="h-4 w-4" />
                               <AlertDescription className="text-destructive">
                                 <strong>Revision needed:</strong> {task.rejection_note}
                               </AlertDescription>
                             </Alert>
                           )}
-                          <div className="flex items-center space-x-2">
-                            <Badge className={getStatusColor(task.status)}>
-                              {getStatusIcon(task.status)}
-                              <span className="ml-1 capitalize">{task.status}</span>
-                            </Badge>
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Badge className={getPriorityColor(task.priority)}>
                               {task.priority.toUpperCase()}
                             </Badge>
                             {task.due_date && (
-                              <span className="text-sm text-muted-foreground">
+                              <span className="text-sm text-muted-foreground flex items-center">
+                                <Clock className="h-3 w-3 mr-1" />
                                 Due: {new Date(task.due_date).toLocaleDateString()}
                               </span>
                             )}
                           </div>
+                        </div>
+                        <div className="min-w-[180px]">
+                          <label className="text-sm text-muted-foreground mb-2 block">
+                            Task Status
+                          </label>
+                          <Select
+                            value={task.status}
+                            onValueChange={(value) => handleStatusChange(task.id, value)}
+                            disabled={updateTaskStatusMutation.isPending}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="not_started">
+                                <div className="flex items-center">
+                                  <Clock className="h-4 w-4 mr-2" />
+                                  Not Started
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="in_progress">
+                                <div className="flex items-center">
+                                  <Play className="h-4 w-4 mr-2" />
+                                  In Progress
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="completed">
+                                <div className="flex items-center">
+                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                  Completed
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="shelved">
+                                <div className="flex items-center">
+                                  <Archive className="h-4 w-4 mr-2" />
+                                  Shelved
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
                     </CardContent>
@@ -279,10 +367,10 @@ const EmployeeTasks = ({ onNavigate }: EmployeeTasksProps) => {
             </div>
           )}
 
-          {/* Completed Tasks */}
+          {/* Completed/Accepted Tasks */}
           {(completedTasks.length > 0 || acceptedTasks.length > 0) && (
             <div>
-              <h2 className="text-xl font-semibold mb-4">Completed Tasks</h2>
+              <h2 className="text-xl font-semibold mb-4">Finished Tasks</h2>
               <div className="space-y-4">
                 {[...completedTasks, ...acceptedTasks].map((task) => (
                   <Card key={task.id} className="opacity-75">
@@ -297,7 +385,7 @@ const EmployeeTasks = ({ onNavigate }: EmployeeTasksProps) => {
                           <div className="flex items-center space-x-2">
                             <Badge className={getStatusColor(task.status)}>
                               {getStatusIcon(task.status)}
-                              <span className="ml-1 capitalize">{task.status}</span>
+                              <span className="ml-1">{getStatusLabel(task.status)}</span>
                             </Badge>
                             <Badge className={getPriorityColor(task.priority)}>
                               {task.priority.toUpperCase()}
