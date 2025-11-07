@@ -189,6 +189,8 @@ const MarkAttendance = ({ onNavigate }: MarkAttendanceProps) => {
             .from('attendance')
             .update({ 
               check_out_time: localDateTime,
+              check_out_location_lat: location.lat,
+              check_out_location_lng: location.lng,
             })
             .eq('id', todayAttendance.id);
 

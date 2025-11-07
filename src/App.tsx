@@ -65,6 +65,14 @@ const App = () => (
               }
             />
             <Route
+              path="/admin/signin"
+              element={
+                <PublicRoute>
+                  <AdminSignIn />
+                </PublicRoute>
+              }
+            />
+            <Route
               path="/signin/admin"
               element={
                 <PublicRoute>

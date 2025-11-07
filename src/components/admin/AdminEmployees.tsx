@@ -19,7 +19,8 @@ import {
   Calendar,
   Edit,
   Trash2,
-  Eye
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { 
   DropdownMenu,
@@ -70,6 +71,7 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editFormData, setEditFormData] = useState<Employee | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [newEmployeeData, setNewEmployeeData] = useState({
     name: "",
     email: "",
@@ -572,13 +574,29 @@ const AdminEmployees = ({ onBack }: AdminEmployeesProps) => {
 
               <div>
                 <Label htmlFor="add-password">Password *</Label>
-                <Input
-                  id="add-password"
-                  type="password"
-                  value={newEmployeeData.password}
-                  onChange={(e) => setNewEmployeeData({ ...newEmployeeData, password: e.target.value })}
-                  placeholder="Minimum 6 characters"
-                />
+                <div className="relative">
+                  <Input
+                    id="add-password"
+                    type={showPassword ? "text" : "password"}
+                    value={newEmployeeData.password}
+                    onChange={(e) => setNewEmployeeData({ ...newEmployeeData, password: e.target.value })}
+                    placeholder="Minimum 6 characters"
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
               </div>
 
               <div>

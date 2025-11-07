@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Calendar } from "@/components/ui/calendar";
@@ -14,7 +15,8 @@ import {
   XCircle,
   CalendarIcon,
   MapPin,
-  Filter
+  Filter,
+  Edit
 } from "lucide-react";
 import { 
   Select,
@@ -31,7 +33,15 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { format, differenceInHours } from "date-fns";
 import { supabase } from "@/lib/supabase";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { 
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface AdminAttendanceProps {
   onBack: () => void;
@@ -47,12 +57,16 @@ interface AttendanceRecord {
   status: "present" | "absent" | "late" | "on_leave";
   location_lat?: number | null;
   location_lng?: number | null;
+  check_out_location_lat?: number | null;
+  check_out_location_lng?: number | null;
   method?: string;
 }
 
 const AdminAttendance = ({ onBack }: AdminAttendanceProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   // Get local date in YYYY-MM-DD format using device timezone
   const getLocalDate = (date: Date = new Date()) => {
     return new Date(date.getTime() - (date.getTimezoneOffset() * 60000))
@@ -61,6 +75,7 @@ const AdminAttendance = ({ onBack }: AdminAttendanceProps) => {
   };
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Fetch attendance records for selected date
   const { data: attendanceRecords = [], isLoading } = useQuery<AttendanceRecord[]>({
@@ -85,6 +100,50 @@ const AdminAttendance = ({ onBack }: AdminAttendanceProps) => {
     },
     refetchInterval: 30000,
   });
+
+  // Edit attendance mutation
+  const editAttendanceMutation = useMutation({
+    mutationFn: async (record: AttendanceRecord) => {
+      const { error } = await supabase
+        .from('attendance')
+        .update({
+          check_in_time: record.check_in_time,
+          check_out_time: record.check_out_time,
+          status: record.status,
+        })
+        .eq('id', record.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-attendance'] });
+      setShowEditDialog(false);
+      setEditingRecord(null);
+      toast({
+        title: "Attendance Updated",
+        description: "Attendance record has been updated successfully",
+      });
+    },
+    onError: (error) => {
+      console.error("Error updating attendance:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update attendance record",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const handleEditAttendance = (record: AttendanceRecord) => {
+    setEditingRecord(record);
+    setShowEditDialog(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingRecord) {
+      editAttendanceMutation.mutate(editingRecord);
+    }
+  };
 
   const filteredRecords = attendanceRecords.filter(record => {
     const matchesSearch = (record.employee_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -300,14 +359,54 @@ const AdminAttendance = ({ onBack }: AdminAttendanceProps) => {
                           )}
                         </div>
                         
+                        {/* Check-in Location */}
                         <div className="flex items-center text-sm text-muted-foreground">
-                          <MapPin className="h-3 w-3 mr-1" />
+                          <MapPin className="h-3 w-3 mr-1 text-success" />
+                          <span className="font-medium mr-1">Check-in:</span>
                           {record.location_lat && record.location_lng 
-                            ? `${record.location_lat.toFixed(4)}, ${record.location_lng.toFixed(4)}`
+                            ? (
+                              <a 
+                                href={`https://www.google.com/maps?q=${record.location_lat},${record.location_lng}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                {record.location_lat.toFixed(4)}, {record.location_lng.toFixed(4)}
+                              </a>
+                            )
                             : record.method === 'qr' ? 'QR Code Scan' : 'Manual Entry'}
                         </div>
+
+                        {/* Check-out Location */}
+                        {record.check_out_time && (
+                          <div className="flex items-center text-sm text-muted-foreground">
+                            <MapPin className="h-3 w-3 mr-1 text-destructive" />
+                            <span className="font-medium mr-1">Check-out:</span>
+                            {record.check_out_location_lat && record.check_out_location_lng 
+                              ? (
+                                <a 
+                                  href={`https://www.google.com/maps?q=${record.check_out_location_lat},${record.check_out_location_lng}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline"
+                                >
+                                  {record.check_out_location_lat.toFixed(4)}, {record.check_out_location_lng.toFixed(4)}
+                                </a>
+                              )
+                              : 'Location not recorded'}
+                          </div>
+                        )}
                       </div>
                     </div>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEditAttendance(record)}
+                      className="ml-auto"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
                   </div>
                 );
               })
@@ -315,6 +414,101 @@ const AdminAttendance = ({ onBack }: AdminAttendanceProps) => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Edit Attendance Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Attendance Record</DialogTitle>
+            <DialogDescription>
+              Update check-in/out times and status
+            </DialogDescription>
+          </DialogHeader>
+          {editingRecord && (
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">Employee</Label>
+                <p className="text-sm">{editingRecord.employee_name} ({editingRecord.employee_id})</p>
+              </div>
+
+              <div>
+                <Label className="text-sm font-medium">Date</Label>
+                <p className="text-sm">{format(new Date(editingRecord.date), "MMMM dd, yyyy")}</p>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-check-in">Check-in Time</Label>
+                <Input
+                  id="edit-check-in"
+                  type="time"
+                  value={editingRecord.check_in_time ? format(new Date(editingRecord.check_in_time), "HH:mm") : ""}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const [hours, minutes] = e.target.value.split(':');
+                    const date = new Date(editingRecord.date);
+                    date.setHours(parseInt(hours), parseInt(minutes));
+                    setEditingRecord({ 
+                      ...editingRecord, 
+                      check_in_time: date.toISOString() 
+                    });
+                  }}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-check-out">Check-out Time</Label>
+                <Input
+                  id="edit-check-out"
+                  type="time"
+                  value={editingRecord.check_out_time ? format(new Date(editingRecord.check_out_time), "HH:mm") : ""}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const [hours, minutes] = e.target.value.split(':');
+                    const date = new Date(editingRecord.date);
+                    date.setHours(parseInt(hours), parseInt(minutes));
+                    setEditingRecord({ 
+                      ...editingRecord, 
+                      check_out_time: date.toISOString() 
+                    });
+                  }}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-status">Status</Label>
+                <Select
+                  value={editingRecord.status}
+                  onValueChange={(value: "present" | "absent" | "late" | "on_leave") => 
+                    setEditingRecord({ ...editingRecord, status: value })
+                  }
+                >
+                  <SelectTrigger id="edit-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="present">Present</SelectItem>
+                    <SelectItem value="absent">Absent</SelectItem>
+                    <SelectItem value="late">Late</SelectItem>
+                    <SelectItem value="on_leave">On Leave</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveEdit}
+              disabled={editAttendanceMutation.isPending}
+              className="gradient-primary text-white"
+            >
+              {editAttendanceMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

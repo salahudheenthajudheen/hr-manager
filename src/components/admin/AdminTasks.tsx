@@ -19,7 +19,10 @@ import {
   Eye,
   Edit,
   Trash2,
-  MessageSquare
+  MessageSquare,
+  Image as ImageIcon,
+  ExternalLink,
+  Calendar as CalendarIcon
 } from "lucide-react";
 import { 
   Dialog,
@@ -28,6 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { 
   Select,
@@ -64,6 +68,16 @@ interface Task {
   completed_at?: string;
   created_at: string;
   rejection_note?: string;
+  reference_materials?: string;
+  delivery_location?: string;
+  completion_notes?: string;
+  rejection_details?: string;
+  rejection_images?: string[];
+  auto_reassigned?: boolean;
+  reassignment_count?: number;
+  original_due_date?: string;
+  employee_references?: string;
+  employee_photos?: string[];
 }
 
 interface NewTask {
@@ -72,6 +86,8 @@ interface NewTask {
   assigned_to: string;
   priority: "low" | "medium" | "high" | "urgent";
   due_date: Date | undefined;
+  reference_materials: string;
+  delivery_location: string;
 }
 
 interface Employee {
@@ -83,7 +99,9 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [rejectionNote, setRejectionNote] = useState("");
   const { toast } = useToast();
   const { employee } = useAuth();
@@ -94,7 +112,9 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
     description: "",
     assigned_to: "",
     priority: "medium",
-    due_date: undefined
+    due_date: undefined,
+    reference_materials: "",
+    delivery_location: ""
   });
 
   // Fetch all employees for assignment dropdown
@@ -126,11 +146,16 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
 
       if (error) throw error;
       
-      return (data || []).map(task => ({
+      const mappedData = (data || []).map(task => ({
         ...task,
         assigned_employee_name: task.assigned?.name || 'Unknown',
         creator_name: task.creator?.name || 'Unknown'
       }));
+
+      // Debug: Log task data to see if employee_photos is included
+      console.log('Admin tasks data:', mappedData);
+      
+      return mappedData;
     },
     refetchInterval: 30000,
   });
@@ -149,7 +174,9 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
           created_by: employee.employee_id,
           due_date: task.due_date ? format(task.due_date, 'yyyy-MM-dd') : null,
           priority: task.priority,
-          status: 'not_started'
+          status: 'not_started',
+          reference_materials: task.reference_materials || null,
+          delivery_location: task.delivery_location || null,
         })
         .select();
 
@@ -162,13 +189,16 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-tasks'] });
       setShowCreateDialog(false);
       setNewTask({
         title: "",
         description: "",
         assigned_to: "",
         priority: "medium",
-        due_date: undefined
+        due_date: undefined,
+        reference_materials: "",
+        delivery_location: ""
       });
       toast({
         title: "Task Created",
@@ -185,7 +215,7 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
     }
   });
 
-  // Delete task mutation
+    // Delete task mutation
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
       const { error } = await supabase
@@ -207,6 +237,141 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
       toast({
         title: "Error",
         description: "Failed to delete task",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Edit task mutation
+  const editTaskMutation = useMutation({
+    mutationFn: async (task: Task) => {
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          title: task.title,
+          description: task.description,
+          assigned_to: task.assigned_to,
+          priority: task.priority,
+          due_date: task.due_date,
+          reference_materials: task.reference_materials,
+          delivery_location: task.delivery_location,
+        })
+        .eq('id', task.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-tasks'] });
+      setShowEditDialog(false);
+      setEditingTask(null);
+      toast({
+        title: "Task Updated",
+        description: "Task has been updated successfully",
+      });
+    },
+    onError: (error) => {
+      console.error("Error updating task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update task",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const handleEditTask = (task: Task) => {
+    setEditingTask(task);
+    setShowEditDialog(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingTask) {
+      editTaskMutation.mutate(editingTask);
+    }
+  };
+
+  // Accept task mutation
+  const acceptTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ 
+          status: 'accepted',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', taskId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-tasks'] });
+      toast({
+        title: "Task Accepted",
+        description: "Task has been accepted successfully",
+      });
+    },
+    onError: (error) => {
+      console.error("Error accepting task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to accept task",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Reject task with auto-reassignment mutation
+  const rejectTaskMutation = useMutation({
+    mutationFn: async ({ taskId, note }: { taskId: string; note: string }) => {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) throw new Error("Task not found");
+
+      // Calculate next day's date
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const newDueDate = format(tomorrow, 'yyyy-MM-dd');
+
+      console.log("Rejecting task:", {
+        taskId,
+        note,
+        newDueDate,
+        reassignment_count: (task.reassignment_count || 0) + 1
+      });
+
+      const { error } = await supabase
+        .from('tasks')
+        .update({ 
+          status: 'not_started', // Reset to not started for rework
+          rejection_note: note,
+          rejection_details: note,
+          auto_reassigned: true,
+          reassignment_count: (task.reassignment_count || 0) + 1,
+          due_date: newDueDate,
+          original_due_date: task.original_due_date || task.due_date
+        })
+        .eq('id', taskId);
+
+      if (error) {
+        console.error("Supabase error:", error);
+        throw new Error(error.message || "Failed to reject task");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-tasks'] });
+      setRejectionNote("");
+      toast({
+        title: "Task Rejected & Reassigned",
+        description: "Task has been rejected and automatically reassigned to next day",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Error rejecting task:", error);
+      toast({
+        title: "Error Rejecting Task",
+        description: error.message || "Failed to reject task. Please ensure all database columns exist.",
         variant: "destructive"
       });
     }
@@ -346,6 +511,29 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
                   placeholder="Enter task description"
                   className="mt-1"
                   rows={3}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="referenceMaterials">Reference Materials</Label>
+                <Textarea
+                  id="referenceMaterials"
+                  value={newTask.reference_materials}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, reference_materials: e.target.value }))}
+                  placeholder="Add links, documents, or reference materials for this task"
+                  className="mt-1"
+                  rows={2}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="deliveryLocation">Delivery Location</Label>
+                <Input
+                  id="deliveryLocation"
+                  value={newTask.delivery_location}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, delivery_location: e.target.value }))}
+                  placeholder="Where should the completed work be delivered? (e.g., email, shared folder, desk)"
+                  className="mt-1"
                 />
               </div>
 
@@ -562,7 +750,7 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
                           <Eye className="h-4 w-4" />
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="max-w-2xl">
+                      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle>Task Details</DialogTitle>
                           <DialogDescription>
@@ -576,6 +764,10 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
                               <div>
                                 <label className="text-sm font-medium">Assigned To</label>
                                 <p>{selectedTask.assigned_employee_name}</p>
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium">Created By</label>
+                                <p>{selectedTask.creator_name}</p>
                               </div>
                               <div>
                                 <label className="text-sm font-medium">Priority</label>
@@ -594,6 +786,12 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
                                 <label className="text-sm font-medium">Due Date</label>
                                 <p>{format(new Date(selectedTask.due_date), "MMM dd, yyyy")}</p>
                               </div>
+                              {selectedTask.reassignment_count ? (
+                                <div>
+                                  <label className="text-sm font-medium">Reassignments</label>
+                                  <p className="text-orange-600 font-semibold">{selectedTask.reassignment_count} times</p>
+                                </div>
+                              ) : null}
                             </div>
                             
                             <div>
@@ -605,10 +803,156 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
                               <label className="text-sm font-medium">Description</label>
                               <p>{selectedTask.description}</p>
                             </div>
+
+                            {selectedTask.reference_materials && (
+                              <div>
+                                <label className="text-sm font-medium">Admin's Reference Materials</label>
+                                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{selectedTask.reference_materials}</p>
+                              </div>
+                            )}
+
+                            {selectedTask.employee_references && (
+                              <div className="bg-purple-50 p-3 rounded-md border border-purple-200">
+                                <label className="text-sm font-medium text-purple-900">Employee's References</label>
+                                <p className="text-sm text-purple-800 whitespace-pre-wrap mt-1">{selectedTask.employee_references}</p>
+                              </div>
+                            )}
+
+                            {selectedTask.employee_photos && selectedTask.employee_photos.length > 0 && (
+                              <div className="bg-purple-50 p-3 rounded-md border border-purple-200">
+                                <div className="flex items-start">
+                                  <ImageIcon className="h-4 w-4 mr-2 mt-0.5 text-purple-600" />
+                                  <div className="flex-1">
+                                    <label className="text-sm font-medium text-purple-900">Employee's Uploaded Photos</label>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
+                                      {selectedTask.employee_photos.map((photoUrl, index) => (
+                                        <a 
+                                          key={index}
+                                          href={photoUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="relative group rounded-md overflow-hidden border-2 border-purple-200 hover:border-purple-400 transition-colors"
+                                        >
+                                          <img 
+                                            src={photoUrl} 
+                                            alt={`Employee upload ${index + 1}`}
+                                            className="w-full h-24 object-cover"
+                                          />
+                                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity flex items-center justify-center">
+                                            <Eye className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                          </div>
+                                        </a>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {selectedTask.delivery_location && (
+                              <div>
+                                <label className="text-sm font-medium">Delivery Location</label>
+                                <p className="text-sm">{selectedTask.delivery_location}</p>
+                              </div>
+                            )}
+
+                            {selectedTask.completion_notes && (
+                              <div className="border-t pt-4">
+                                <label className="text-sm font-medium">Employee Completion Notes</label>
+                                <p className="text-sm bg-muted p-3 rounded-md mt-2">{selectedTask.completion_notes}</p>
+                              </div>
+                            )}
+
+                            {selectedTask.rejection_note && (
+                              <div className="border-t pt-4">
+                                <label className="text-sm font-medium text-destructive">Rejection Feedback</label>
+                                <p className="text-sm bg-destructive/10 p-3 rounded-md mt-2">{selectedTask.rejection_note}</p>
+                              </div>
+                            )}
+
+                            {selectedTask.status === 'completed' && (
+                              <div className="border-t pt-4 flex gap-2">
+                                <Button
+                                  className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                                  onClick={() => {
+                                    acceptTaskMutation.mutate(selectedTask.id);
+                                    setSelectedTask(null);
+                                  }}
+                                  disabled={acceptTaskMutation.isPending}
+                                >
+                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                  Accept Task
+                                </Button>
+                                
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button variant="destructive" className="flex-1">
+                                      <XCircle className="h-4 w-4 mr-2" />
+                                      Reject & Reassign
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Reject Task</DialogTitle>
+                                      <DialogDescription>
+                                        Provide feedback and automatically reassign to next day
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="space-y-4">
+                                      <div>
+                                        <Label htmlFor="rejection-note">Rejection Reason & Feedback *</Label>
+                                        <Textarea
+                                          id="rejection-note"
+                                          value={rejectionNote}
+                                          onChange={(e) => setRejectionNote(e.target.value)}
+                                          placeholder="Explain what needs to be improved or corrected..."
+                                          rows={4}
+                                          className="mt-1"
+                                        />
+                                      </div>
+                                      <div className="bg-muted p-3 rounded-md text-sm">
+                                        <p><strong>Note:</strong> Task will be automatically reassigned to tomorrow with status reset to "Not Started".</p>
+                                      </div>
+                                      <div className="flex justify-end gap-2">
+                                        <Button variant="outline" onClick={() => setRejectionNote("")}>
+                                          Cancel
+                                        </Button>
+                                        <Button
+                                          variant="destructive"
+                                          onClick={() => {
+                                            if (!rejectionNote.trim()) {
+                                              toast({
+                                                title: "Validation Error",
+                                                description: "Please provide rejection feedback",
+                                                variant: "destructive"
+                                              });
+                                              return;
+                                            }
+                                            rejectTaskMutation.mutate({ taskId: selectedTask.id, note: rejectionNote });
+                                            setSelectedTask(null);
+                                          }}
+                                          disabled={rejectTaskMutation.isPending || !rejectionNote.trim()}
+                                        >
+                                          {rejectTaskMutation.isPending ? "Rejecting..." : "Reject & Reassign"}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+                              </div>
+                            )}
                           </div>
                         )}
                       </DialogContent>
                     </Dialog>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEditTask(task)}
+                    >
+                      <Edit className="h-4 w-4 text-primary" />
+                    </Button>
 
                     <Button
                       variant="ghost"
@@ -624,6 +968,145 @@ const AdminTasks = ({ onBack }: AdminTasksProps) => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Edit Task Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Task</DialogTitle>
+            <DialogDescription>
+              Update task details
+            </DialogDescription>
+          </DialogHeader>
+          {editingTask && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-title">Title *</Label>
+                <Input
+                  id="edit-title"
+                  value={editingTask.title}
+                  onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                  placeholder="Task title"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-description">Description *</Label>
+                <Textarea
+                  id="edit-description"
+                  value={editingTask.description}
+                  onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
+                  placeholder="Detailed task description"
+                  rows={4}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-assigned">Assigned To *</Label>
+                <Select
+                  value={editingTask.assigned_to}
+                  onValueChange={(value) => setEditingTask({ ...editingTask, assigned_to: value })}
+                >
+                  <SelectTrigger id="edit-assigned">
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map((emp) => (
+                      <SelectItem key={emp.employee_id} value={emp.employee_id}>
+                        {emp.name} ({emp.employee_id})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-priority">Priority *</Label>
+                  <Select
+                    value={editingTask.priority}
+                    onValueChange={(value: "low" | "medium" | "high" | "urgent") => 
+                      setEditingTask({ ...editingTask, priority: value })
+                    }
+                  >
+                    <SelectTrigger id="edit-priority">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Due Date *</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !editingTask.due_date && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editingTask.due_date ? format(new Date(editingTask.due_date), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={editingTask.due_date ? new Date(editingTask.due_date) : undefined}
+                        onSelect={(date) => setEditingTask({ 
+                          ...editingTask, 
+                          due_date: date ? format(date, 'yyyy-MM-dd') : '' 
+                        })}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-references">Reference Materials</Label>
+                <Textarea
+                  id="edit-references"
+                  value={editingTask.reference_materials || ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, reference_materials: e.target.value })}
+                  placeholder="Links, documents, or reference materials for the employee"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-delivery">Delivery Location</Label>
+                <Input
+                  id="edit-delivery"
+                  value={editingTask.delivery_location || ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, delivery_location: e.target.value })}
+                  placeholder="Where should the employee deliver the work?"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveEdit}
+              disabled={editTaskMutation.isPending || !editingTask?.title || !editingTask?.description}
+              className="gradient-primary text-white"
+            >
+              {editTaskMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -155,13 +155,48 @@ const AdminLeaveRequests = ({ onBack }: AdminLeaveRequestsProps) => {
       toast({
         title: "Leave Rejected",
         description: "The leave request has been rejected.",
+        variant: "destructive"
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error("Error rejecting leave:", error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to reject leave request",
+        description: error.message || "Failed to reject leave request",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Edit leave mutation (for changing status after approval/rejection)
+  const editStatusMutation = useMutation({
+    mutationFn: async ({ requestId, newStatus, comment }: { requestId: string; newStatus: string; comment?: string }) => {
+      const { error } = await supabase
+        .from('leave_requests')
+        .update({
+          status: newStatus,
+          approved_by: employee?.employee_id,
+          approved_at: new Date().toISOString(),
+          rejection_reason: comment || null
+        })
+        .eq('id', requestId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-leave-requests'] });
+      setReviewComment("");
+      setSelectedRequest(null);
+      toast({
+        title: "Status Updated",
+        description: "Leave request status has been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      console.error("Error updating leave status:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update leave status",
         variant: "destructive"
       });
     }
@@ -538,6 +573,108 @@ const AdminLeaveRequests = ({ onBack }: AdminLeaveRequestsProps) => {
                             </DialogContent>
                           </Dialog>
                         </>
+                      )}
+
+                      {(request.status === "approved" || request.status === "rejected") && (
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => setSelectedRequest(request)}
+                              className="text-primary border-primary hover:bg-primary/10"
+                            >
+                              <MessageSquare className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Edit Leave Request Status</DialogTitle>
+                              <DialogDescription>
+                                Change the status of this leave request
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              <div>
+                                <label className="text-sm font-medium">Current Status:</label>
+                                <Badge className={`${getStatusColor(request.status)} ml-2`}>
+                                  {request.status.toUpperCase()}
+                                </Badge>
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium">Change To:</label>
+                                <div className="flex gap-2 mt-2">
+                                  {request.status !== "approved" && (
+                                    <Button 
+                                      onClick={() => {
+                                        editStatusMutation.mutate({ 
+                                          requestId: request.id, 
+                                          newStatus: 'approved',
+                                          comment: reviewComment || 'Status changed to approved'
+                                        });
+                                      }}
+                                      className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                                      disabled={editStatusMutation.isPending}
+                                    >
+                                      <CheckCircle className="h-4 w-4 mr-2" />
+                                      Approve
+                                    </Button>
+                                  )}
+                                  {request.status !== "rejected" && (
+                                    <Button 
+                                      variant="destructive"
+                                      className="flex-1"
+                                      onClick={() => {
+                                        if (!reviewComment.trim()) {
+                                          toast({
+                                            title: "Comment Required",
+                                            description: "Please provide a reason for rejection",
+                                            variant: "destructive"
+                                          });
+                                          return;
+                                        }
+                                        editStatusMutation.mutate({ 
+                                          requestId: request.id, 
+                                          newStatus: 'rejected',
+                                          comment: reviewComment
+                                        });
+                                      }}
+                                      disabled={editStatusMutation.isPending}
+                                    >
+                                      <XCircle className="h-4 w-4 mr-2" />
+                                      Reject
+                                    </Button>
+                                  )}
+                                  <Button 
+                                    variant="outline"
+                                    className="flex-1"
+                                    onClick={() => {
+                                      editStatusMutation.mutate({ 
+                                        requestId: request.id, 
+                                        newStatus: 'pending',
+                                        comment: reviewComment || 'Status reset to pending'
+                                      });
+                                    }}
+                                    disabled={editStatusMutation.isPending}
+                                  >
+                                    <Clock className="h-4 w-4 mr-2" />
+                                    Reset to Pending
+                                  </Button>
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium">Comment (required for rejection):</label>
+                                <Textarea
+                                  value={reviewComment}
+                                  onChange={(e) => setReviewComment(e.target.value)}
+                                  placeholder="Add comment for status change..."
+                                  rows={3}
+                                  className="mt-1"
+                                />
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                       )}
                     </div>
                   </div>
